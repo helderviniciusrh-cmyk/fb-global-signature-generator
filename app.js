@@ -2,18 +2,33 @@ import {
   signatureConfig as config
 } from "./signature-config.js";
 
-
 import {
   parseGIF,
   decompressFrames
 } from "https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/+esm";
-
 
 import {
   GIFEncoder,
   quantize,
   applyPalette
 } from "https://cdn.jsdelivr.net/npm/gifenc@1.0.3/+esm";
+
+
+/* =========================================================
+   CONFIGURAÇÃO DA SAÍDA OTIMIZADA
+========================================================= */
+
+const OUTPUT_WIDTH = 815;
+
+const OUTPUT_HEIGHT = Math.round(
+  config.originalHeight *
+  (OUTPUT_WIDTH / config.originalWidth)
+);
+
+const OUTPUT_SCALE =
+  OUTPUT_WIDTH / config.originalWidth;
+
+const GIF_COLORS = 128;
 
 
 /* =========================================================
@@ -122,6 +137,23 @@ function slugify(value) {
 }
 
 
+function formatBytes(bytes) {
+
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 KB";
+  }
+
+  const mb =
+    bytes / (1024 * 1024);
+
+  if (mb >= 1) {
+    return `${mb.toFixed(2)} MB`;
+  }
+
+  return `${Math.round(bytes / 1024)} KB`;
+}
+
+
 /* =========================================================
    VALIDAÇÃO
 ========================================================= */
@@ -142,24 +174,20 @@ function validateEmail() {
     return false;
   }
 
-
   const valid =
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
       value
     );
-
 
   inputs.email.setAttribute(
     "aria-invalid",
     valid ? "false" : "true"
   );
 
-
   emailError.textContent =
     valid
       ? ""
       : "Informe um e-mail válido.";
-
 
   return valid;
 }
@@ -177,12 +205,10 @@ function validateForExport() {
     inputs.country
   ];
 
-
   const complete =
     required.every(
       input => input.value.trim()
     );
-
 
   if (!complete) {
 
@@ -194,7 +220,6 @@ function validateForExport() {
     return false;
   }
 
-
   if (!validateEmail()) {
 
     status.textContent =
@@ -204,7 +229,6 @@ function validateForExport() {
 
     return false;
   }
-
 
   return true;
 }
@@ -225,7 +249,6 @@ function fillDefaults() {
     }
 
   });
-
 }
 
 
@@ -241,11 +264,9 @@ function configureOverlay(
   const field =
     config.fields[fieldName];
 
-
   if (!element || !field) {
     return;
   }
-
 
   element.style.left =
     `${field.x}px`;
@@ -302,7 +323,6 @@ function configureAllOverlays() {
     outputs.location,
     "location"
   );
-
 }
 
 
@@ -322,7 +342,6 @@ function showOverlays() {
 
     }
   );
-
 }
 
 
@@ -338,7 +357,6 @@ function hideOverlays() {
 
     }
   );
-
 }
 
 
@@ -346,7 +364,6 @@ function updatePreviewText() {
 
   const data =
     getData();
-
 
   outputs.name.textContent =
     data.name;
@@ -362,7 +379,6 @@ function updatePreviewText() {
 
   outputs.location.textContent =
     data.location;
-
 }
 
 
@@ -372,23 +388,24 @@ function resizePreview() {
     return;
   }
 
-
   const availableWidth =
     shell.clientWidth;
-
 
   if (!availableWidth) {
     return;
   }
 
+  /*
+   * A prévia do formulário continua usando
+   * o sistema original de 1629 x 543.
+   */
 
   const scale =
     Math.min(
       1,
       availableWidth /
-        config.originalWidth
+      config.originalWidth
     );
-
 
   stage.style.width =
     `${config.originalWidth}px`;
@@ -402,12 +419,10 @@ function resizePreview() {
   stage.style.transform =
     `scale(${scale})`;
 
-
   shell.style.height =
     `${Math.ceil(
       config.originalHeight * scale
     )}px`;
-
 }
 
 
@@ -422,13 +437,20 @@ function showEditablePreview() {
     generatedGifUrl = null;
   }
 
-
   generatedGifBlob = null;
 
+  /*
+   * Volta para o GIF original em resolução cheia.
+   */
+
+  baseImage.style.width =
+    `${config.originalWidth}px`;
+
+  baseImage.style.height =
+    `${config.originalHeight}px`;
 
   baseImage.src =
     config.assets.previewGifUrl;
-
 
   showOverlays();
 
@@ -436,19 +458,15 @@ function showEditablePreview() {
 
   downloadButton.disabled = true;
 
-
   if (previewDescription) {
 
     previewDescription.textContent =
       "O GIF permanece intacto e animado.";
-
   }
-
 
   requestAnimationFrame(
     resizePreview
   );
-
 }
 
 
@@ -481,7 +499,6 @@ async function ensureFonts() {
     return;
   }
 
-
   try {
 
     await Promise.all([
@@ -502,7 +519,6 @@ async function ensureFonts() {
       )
     ]);
 
-
     await document.fonts.ready;
 
   } catch (error) {
@@ -511,15 +527,50 @@ async function ensureFonts() {
       "Não foi possível confirmar Montserrat. Será utilizado o fallback.",
       error
     );
-
   }
-
 }
 
 
 /* =========================================================
-   TEXTO NO GIF
+   TEXTO NO GIF OTIMIZADO
 ========================================================= */
+
+function getScaledField(fieldName) {
+
+  const original =
+    config.fields[fieldName];
+
+  if (!original) {
+    return null;
+  }
+
+  return {
+    x:
+      original.x *
+      OUTPUT_SCALE,
+
+    y:
+      original.y *
+      OUTPUT_SCALE,
+
+    maxWidth:
+      original.maxWidth *
+      OUTPUT_SCALE,
+
+    fontSize:
+      original.fontSize *
+      OUTPUT_SCALE,
+
+    minFontSize:
+      (original.minFontSize ||
+        original.fontSize * 0.7) *
+      OUTPUT_SCALE,
+
+    fontWeight:
+      original.fontWeight
+  };
+}
+
 
 function calculateFontSize(
   ctx,
@@ -530,19 +581,13 @@ function calculateFontSize(
   let size =
     field.fontSize;
 
-
   const min =
-    field.minFontSize ||
-    Math.round(
-      field.fontSize * 0.7
-    );
-
+    field.minFontSize;
 
   while (size > min) {
 
     ctx.font =
       `${field.fontWeight} ${size}px ${config.fontFamily}`;
-
 
     if (
       ctx.measureText(text).width <=
@@ -551,10 +596,8 @@ function calculateFontSize(
       break;
     }
 
-
-    size -= 1;
+    size -= 0.5;
   }
-
 
   return size;
 }
@@ -570,15 +613,14 @@ function drawField(
     return;
   }
 
-
   const field =
-    config.fields[fieldName];
-
+    getScaledField(
+      fieldName
+    );
 
   if (!field) {
     return;
   }
-
 
   const size =
     calculateFontSize(
@@ -587,25 +629,19 @@ function drawField(
       field
     );
 
-
   ctx.save();
-
 
   ctx.font =
     `${field.fontWeight} ${size}px ${config.fontFamily}`;
 
-
   ctx.fillStyle =
     config.colors.navy;
-
 
   ctx.textAlign =
     "left";
 
-
   ctx.textBaseline =
     "top";
-
 
   ctx.fillText(
     text,
@@ -613,9 +649,7 @@ function drawField(
     field.y
   );
 
-
   ctx.restore();
-
 }
 
 
@@ -630,13 +664,11 @@ function drawEmployeeData(
     "name"
   );
 
-
   drawField(
     ctx,
     data.role,
     "role"
   );
-
 
   drawField(
     ctx,
@@ -644,25 +676,22 @@ function drawEmployeeData(
     "phone"
   );
 
-
   drawField(
     ctx,
     data.email,
     "email"
   );
 
-
   drawField(
     ctx,
     data.location,
     "location"
   );
-
 }
 
 
 /* =========================================================
-   PATCH DO GIF
+   PATCH DO GIF ORIGINAL
 ========================================================= */
 
 function createPatchCanvas(
@@ -675,10 +704,8 @@ function createPatchCanvas(
       frame.dims.height
     );
 
-
   const ctx =
     canvas.getContext("2d");
-
 
   const imageData =
     ctx.createImageData(
@@ -686,11 +713,9 @@ function createPatchCanvas(
       frame.dims.height
     );
 
-
   imageData.data.set(
     frame.patch
   );
-
 
   ctx.putImageData(
     imageData,
@@ -698,13 +723,12 @@ function createPatchCanvas(
     0
   );
 
-
   return canvas;
 }
 
 
 /* =========================================================
-   GERAR GIF PERSONALIZADO
+   GERAR GIF PERSONALIZADO E OTIMIZADO
 ========================================================= */
 
 async function generateSignature() {
@@ -713,29 +737,24 @@ async function generateSignature() {
     return;
   }
 
-
   if (!validateForExport()) {
     return;
   }
-
 
   generating = true;
 
   generateButton.disabled = true;
   downloadButton.disabled = true;
 
-
   status.textContent =
     "Carregando GIF oficial...";
-
 
   try {
 
     await ensureFonts();
 
-
     /*
-     * Primeiro tentamos o arquivo local.
+     * Primeiro tenta carregar o arquivo local.
      */
 
     let response =
@@ -746,10 +765,8 @@ async function generateSignature() {
         }
       );
 
-
     /*
-     * Caso o servidor local não entregue
-     * corretamente, usamos a URL pública.
+     * Fallback para GitHub.
      */
 
     if (!response.ok) {
@@ -761,37 +778,29 @@ async function generateSignature() {
             cache: "no-store"
           }
         );
-
     }
-
 
     if (!response.ok) {
 
       throw new Error(
         "Não foi possível carregar o GIF oficial."
       );
-
     }
-
 
     const arrayBuffer =
       await response.arrayBuffer();
 
-
     status.textContent =
       "Lendo animação...";
 
-
     const gif =
       parseGIF(arrayBuffer);
-
 
     const frames =
       decompressFrames(
         gif,
         true
       );
-
 
     if (
       !frames ||
@@ -801,35 +810,29 @@ async function generateSignature() {
       throw new Error(
         "O arquivo não contém frames válidos."
       );
-
     }
-
 
     console.log(
       `Frames encontrados: ${frames.length}`
     );
 
-
-    const width =
-      config.originalWidth;
-
-    const height =
-      config.originalHeight;
+    console.log(
+      `Saída otimizada: ${OUTPUT_WIDTH} × ${OUTPUT_HEIGHT}`
+    );
 
 
-    /*
-     * Canvas acumulativo da animação.
-     */
+    /* =====================================================
+       CANVAS ORIGINAL
+    ===================================================== */
 
-    const animationCanvas =
+    const sourceCanvas =
       createCanvas(
-        width,
-        height
+        config.originalWidth,
+        config.originalHeight
       );
 
-
-    const animationCtx =
-      animationCanvas.getContext(
+    const sourceCtx =
+      sourceCanvas.getContext(
         "2d",
         {
           willReadFrequently: true
@@ -837,38 +840,52 @@ async function generateSignature() {
       );
 
 
-    /*
-     * Canvas final:
-     * arte + dados do funcionário.
-     */
+    /* =====================================================
+       CANVAS OTIMIZADO
+    ===================================================== */
 
-    const finalCanvas =
+    const outputCanvas =
       createCanvas(
-        width,
-        height
+        OUTPUT_WIDTH,
+        OUTPUT_HEIGHT
       );
 
-
-    const finalCtx =
-      finalCanvas.getContext(
+    const outputCtx =
+      outputCanvas.getContext(
         "2d",
         {
           willReadFrequently: true
         }
       );
 
-
     /*
-     * Encoder do novo GIF.
+     * Melhora a redução da imagem.
      */
+
+    outputCtx.imageSmoothingEnabled =
+      true;
+
+    outputCtx.imageSmoothingQuality =
+      "high";
+
+
+    /* =====================================================
+       ENCODER
+    ===================================================== */
 
     const encoder =
       GIFEncoder();
 
-
     let previousFrame = null;
     let restoreState = null;
 
+    const employeeData =
+      getData();
+
+
+    /* =====================================================
+       PROCESSA TODOS OS FRAMES
+    ===================================================== */
 
     for (
       let index = 0;
@@ -879,13 +896,12 @@ async function generateSignature() {
       const frame =
         frames[index];
 
-
       status.textContent =
-        `Gerando GIF: ${index + 1} de ${frames.length} frames...`;
+        `Otimizando assinatura: ${index + 1} de ${frames.length} frames...`;
 
 
       /*
-       * Trata o disposal do frame anterior.
+       * Disposal do frame anterior.
        */
 
       if (previousFrame) {
@@ -894,37 +910,33 @@ async function generateSignature() {
           previousFrame.disposalType === 2
         ) {
 
-          animationCtx.clearRect(
+          sourceCtx.clearRect(
             previousFrame.dims.left,
             previousFrame.dims.top,
             previousFrame.dims.width,
             previousFrame.dims.height
           );
-
         }
-
 
         if (
           previousFrame.disposalType === 3 &&
           restoreState
         ) {
 
-          animationCtx.putImageData(
+          sourceCtx.putImageData(
             restoreState,
             0,
             0
           );
 
           restoreState = null;
-
         }
-
       }
 
 
       /*
-       * Disposal 3 exige guardar
-       * o estado anterior.
+       * Guarda o estado anterior
+       * quando necessário.
        */
 
       if (
@@ -932,83 +944,82 @@ async function generateSignature() {
       ) {
 
         restoreState =
-          animationCtx.getImageData(
+          sourceCtx.getImageData(
             0,
             0,
-            width,
-            height
+            config.originalWidth,
+            config.originalHeight
           );
-
       }
 
 
       /*
-       * Desenha o patch atual.
+       * Monta o frame original.
        */
 
       const patchCanvas =
         createPatchCanvas(frame);
 
-
-      animationCtx.drawImage(
+      sourceCtx.drawImage(
         patchCanvas,
         frame.dims.left,
         frame.dims.top
       );
 
 
-      /*
-       * Copia o frame completo.
-       */
+      /* ===================================================
+         REDUZ PARA 815 x 272
+      =================================================== */
 
-      finalCtx.clearRect(
+      outputCtx.clearRect(
         0,
         0,
-        width,
-        height
+        OUTPUT_WIDTH,
+        OUTPUT_HEIGHT
+      );
+
+      outputCtx.drawImage(
+        sourceCanvas,
+
+        0,
+        0,
+        config.originalWidth,
+        config.originalHeight,
+
+        0,
+        0,
+        OUTPUT_WIDTH,
+        OUTPUT_HEIGHT
       );
 
 
-      finalCtx.drawImage(
-        animationCanvas,
-        0,
-        0
-      );
-
-
-      /*
-       * Incorpora os dados.
-       */
+      /* ===================================================
+         ADICIONA OS DADOS JÁ NA ESCALA FINAL
+      =================================================== */
 
       drawEmployeeData(
-        finalCtx,
-        getData()
+        outputCtx,
+        employeeData
       );
 
 
-      /*
-       * Captura os pixels.
-       */
+      /* ===================================================
+         CONVERTE PARA GIF
+      =================================================== */
 
       const imageData =
-        finalCtx.getImageData(
+        outputCtx.getImageData(
           0,
           0,
-          width,
-          height
+          OUTPUT_WIDTH,
+          OUTPUT_HEIGHT
         );
-
-
-      /*
-       * GIF precisa de paleta.
-       */
 
       const palette =
         quantize(
           imageData.data,
-          256
+          GIF_COLORS
         );
-
 
       const indexedPixels =
         applyPalette(
@@ -1018,13 +1029,11 @@ async function generateSignature() {
 
 
       /*
-       * gifuct-js trabalha com delay
-       * em milissegundos.
+       * Mantém o tempo da animação original.
        */
 
       let delay =
         Number(frame.delay);
-
 
       if (
         !Number.isFinite(delay) ||
@@ -1032,18 +1041,13 @@ async function generateSignature() {
       ) {
 
         delay = 100;
-
       }
 
 
-      /*
-       * Adiciona o frame ao novo GIF.
-       */
-
       encoder.writeFrame(
         indexedPixels,
-        width,
-        height,
+        OUTPUT_WIDTH,
+        OUTPUT_HEIGHT,
         {
           palette,
           delay,
@@ -1057,8 +1061,8 @@ async function generateSignature() {
 
 
       /*
-       * Evita congelar completamente
-       * a interface.
+       * Permite que o navegador atualize
+       * a interface durante o processamento.
        */
 
       if (
@@ -1071,18 +1075,18 @@ async function generateSignature() {
               resolve
             )
         );
-
       }
-
     }
 
 
-    encoder.finish();
+    /* =====================================================
+       FINALIZA O GIF
+    ===================================================== */
 
+    encoder.finish();
 
     const bytes =
       encoder.bytes();
-
 
     generatedGifBlob =
       new Blob(
@@ -1098,7 +1102,6 @@ async function generateSignature() {
       URL.revokeObjectURL(
         generatedGifUrl
       );
-
     }
 
 
@@ -1108,13 +1111,23 @@ async function generateSignature() {
       );
 
 
-    /*
-     * Exibe exatamente o arquivo
-     * que foi gerado.
-     */
+    /* =====================================================
+       EXIBE O GIF FINAL
+    ===================================================== */
 
     hideOverlays();
 
+    /*
+     * A imagem final tem metade da resolução,
+     * mas é ampliada somente na prévia para ocupar
+     * a mesma área visual do gerador.
+     */
+
+    baseImage.style.width =
+      `${config.originalWidth}px`;
+
+    baseImage.style.height =
+      `${config.originalHeight}px`;
 
     baseImage.src =
       generatedGifUrl;
@@ -1126,7 +1139,6 @@ async function generateSignature() {
         requestAnimationFrame(
           resizePreview
         );
-
       };
 
 
@@ -1137,13 +1149,12 @@ async function generateSignature() {
     if (previewDescription) {
 
       previewDescription.textContent =
-        "Prévia do GIF final com os dados incorporados.";
-
+        `GIF otimizado · ${OUTPUT_WIDTH} × ${OUTPUT_HEIGHT} · ${formatBytes(generatedGifBlob.size)}`;
     }
 
 
     status.textContent =
-      `Assinatura gerada com sucesso. ${frames.length} frame(s) processado(s).`;
+      `Assinatura pronta. Tamanho final: ${formatBytes(generatedGifBlob.size)}.`;
 
   } catch (error) {
 
@@ -1152,10 +1163,8 @@ async function generateSignature() {
       error
     );
 
-
     status.textContent =
       `Erro ao gerar assinatura: ${error.message}`;
-
 
     showEditablePreview();
 
@@ -1165,9 +1174,7 @@ async function generateSignature() {
 
     generateButton.disabled =
       false;
-
   }
-
 }
 
 
@@ -1185,43 +1192,33 @@ function downloadGif() {
     return;
   }
 
-
   const data =
     getData();
 
-
   const filename =
-    `assinatura-${slugify(data.name)}.gif`;
-
+    `FB-Global-Logistics-${slugify(data.name)}.gif`;
 
   const url =
     URL.createObjectURL(
       generatedGifBlob
     );
 
-
   const link =
     document.createElement("a");
-
 
   link.href =
     url;
 
-
   link.download =
     filename;
-
 
   document.body.appendChild(
     link
   );
 
-
   link.click();
 
-
   link.remove();
-
 
   setTimeout(
     () => {
@@ -1234,10 +1231,8 @@ function downloadGif() {
     1500
   );
 
-
   status.textContent =
-    `Arquivo baixado: ${filename}`;
-
+    `Arquivo baixado: ${filename} · ${formatBytes(generatedGifBlob.size)}`;
 }
 
 
@@ -1252,34 +1247,24 @@ function handleInputChange(
   const input =
     event.target;
 
-
-  /*
-   * Estado sempre em maiúsculo.
-   */
-
   if (
     input === inputs.state
   ) {
 
     input.value =
       input.value.toUpperCase();
-
   }
-
 
   if (
     input === inputs.email
   ) {
 
     validateEmail();
-
   }
 
-
   /*
-   * Se já havia um GIF final,
-   * qualquer alteração invalida
-   * aquele arquivo.
+   * Qualquer alteração invalida
+   * o GIF já gerado.
    */
 
   if (
@@ -1287,12 +1272,9 @@ function handleInputChange(
   ) {
 
     showEditablePreview();
-
   }
 
-
   updatePreviewText();
-
 }
 
 
@@ -1309,45 +1291,40 @@ function resetGenerator() {
     );
 
     generatedGifUrl = null;
-
   }
-
 
   generatedGifBlob = null;
 
-
   fillDefaults();
 
+  baseImage.style.width =
+    `${config.originalWidth}px`;
+
+  baseImage.style.height =
+    `${config.originalHeight}px`;
 
   baseImage.src =
     config.assets.previewGifUrl;
-
 
   showOverlays();
 
   updatePreviewText();
 
-
   downloadButton.disabled =
     true;
-
 
   if (previewDescription) {
 
     previewDescription.textContent =
       "O GIF permanece intacto e animado.";
-
   }
-
 
   status.textContent =
     "Dados restaurados.";
 
-
   requestAnimationFrame(
     resizePreview
   );
-
 }
 
 
@@ -1397,56 +1374,29 @@ window.addEventListener(
 
 function initialize() {
 
-  /*
-   * Configura primeiro o palco.
-   */
-
   stage.style.width =
     `${config.originalWidth}px`;
 
   stage.style.height =
     `${config.originalHeight}px`;
 
-
-  /*
-   * Configura posições dos textos.
-   */
-
   configureAllOverlays();
-
-
-  /*
-   * Preenche Bruno como padrão.
-   */
 
   fillDefaults();
 
-
-  /*
-   * Atualiza textos.
-   */
-
   updatePreviewText();
 
-
-  /*
-   * Exibe overlays.
-   */
-
   showOverlays();
-
-
-  /*
-   * Botão de download começa bloqueado.
-   */
 
   downloadButton.disabled =
     true;
 
+  baseImage.style.width =
+    `${config.originalWidth}px`;
 
-  /*
-   * Carrega o GIF SOMENTE agora.
-   */
+  baseImage.style.height =
+    `${config.originalHeight}px`;
+
 
   baseImage.onload =
     () => {
@@ -1454,16 +1404,11 @@ function initialize() {
       requestAnimationFrame(
         resizePreview
       );
-
     };
 
 
   baseImage.onerror =
     () => {
-
-      /*
-       * Fallback para o GitHub.
-       */
 
       if (
         baseImage.src !==
@@ -1474,24 +1419,16 @@ function initialize() {
           config.assets.publicGifUrl;
 
         return;
-
       }
-
 
       status.textContent =
         "Não foi possível carregar o GIF oficial.";
-
     };
 
 
   baseImage.src =
     config.assets.previewGifUrl;
 
-
-  /*
-   * Caso o navegador já tenha
-   * a imagem no cache.
-   */
 
   if (
     baseImage.complete &&
@@ -1501,9 +1438,7 @@ function initialize() {
     requestAnimationFrame(
       resizePreview
     );
-
   }
-
 }
 
 
