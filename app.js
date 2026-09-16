@@ -1,5 +1,20 @@
 import { signatureConfig as config } from "./signature-config.js";
 
+import {
+  parseGIF,
+  decompressFrames
+} from "https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/+esm";
+
+import {
+  GIFEncoder,
+  quantize,
+  applyPalette
+} from "https://cdn.jsdelivr.net/npm/gifenc@1.0.3/+esm";
+
+/* =========================================================
+   ELEMENTOS
+========================================================= */
+
 const form = document.querySelector("#signature-form");
 const shell = document.querySelector("#preview-shell");
 const stage = document.querySelector("#signature-stage");
@@ -7,283 +22,815 @@ const baseImage = document.querySelector("#signature-base");
 const status = document.querySelector("#action-status");
 const emailError = document.querySelector("#email-error");
 
+const generateButton = document.querySelector("#copy-button");
+const downloadButton = document.querySelector("#download-button");
+const resetButton = document.querySelector("#reset-button");
+
 const inputs = Object.fromEntries(
-  ["name", "role", "phone", "email", "city", "state", "country"].map((id) => [id, document.querySelector(`#${id}`)])
+  ["name", "role", "phone", "email", "city", "state", "country"].map(
+    (id) => [id, document.querySelector(`#${id}`)]
+  )
 );
 
 const outputs = Object.fromEntries(
-  ["name", "role", "phone", "email", "location"].map((id) => [id, document.querySelector(`#preview-${id}`)])
+  ["name", "role", "phone", "email", "location"].map(
+    (id) => [id, document.querySelector(`#preview-${id}`)]
+  )
 );
+
+let generatedGifBlob = null;
+let generatedGifUrl = null;
+
+/* =========================================================
+   BASE
+========================================================= */
 
 baseImage.src = config.assets.previewGifUrl;
 
+/* =========================================================
+   DADOS
+========================================================= */
+
 function setDefaults() {
   Object.entries(config.defaults).forEach(([key, value]) => {
-    inputs[key].value = value;
+    if (inputs[key]) {
+      inputs[key].value = value;
+    }
   });
+
   updatePreview();
-}
 
-function locationText() {
-  const city = inputs.city.value.trim();
-  const state = inputs.state.value.trim().toUpperCase();
-  const country = inputs.country.value.trim();
-  return [city, state].filter(Boolean).join(" – ") + (country ? `${city || state ? " | " : ""}${country}` : "");
-}
+  generatedGifBlob = null;
 
-function setFieldGeometry(key) {
-  const field = config.fields[key];
-  const element = outputs[key];
-  element.style.left = `${field.x}px`;
-  element.style.top = `${field.y}px`;
-  element.style.maxWidth = `${field.maxWidth}px`;
-  element.style.fontSize = `${field.fontSize}px`;
-  element.style.fontWeight = String(field.fontWeight);
-}
-
-function fitText(key) {
-  const field = config.fields[key];
-  const element = outputs[key];
-  let size = field.fontSize;
-  element.style.fontSize = `${size}px`;
-  while (element.scrollWidth > field.maxWidth && size > field.minFontSize) {
-    size -= 1;
-    element.style.fontSize = `${size}px`;
+  if (generatedGifUrl) {
+    URL.revokeObjectURL(generatedGifUrl);
+    generatedGifUrl = null;
   }
-}
 
-function validateEmail() {
-  const value = inputs.email.value.trim();
-  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-  inputs.email.setAttribute("aria-invalid", String(!valid));
-  emailError.textContent = valid || !value ? "" : "Informe um e-mail válido.";
-  return valid;
-}
-
-function updatePreview() {
-  outputs.name.textContent = inputs.name.value.trim();
-  outputs.role.textContent = inputs.role.value.trim();
-  outputs.phone.textContent = inputs.phone.value.trim();
-  outputs.phone.href = `tel:${inputs.phone.value.replace(/[^+\d]/g, "")}`;
-  outputs.email.textContent = inputs.email.value.trim();
-  outputs.email.href = `mailto:${inputs.email.value.trim()}`;
-  outputs.location.textContent = locationText();
-
-  Object.keys(outputs).forEach(setFieldGeometry);
-  requestAnimationFrame(() => Object.keys(outputs).forEach(fitText));
-  validateEmail();
+  downloadButton.disabled = true;
   status.textContent = "";
 }
 
-function scalePreview() {
-  const scale = shell.clientWidth / config.originalWidth;
-  shell.style.height = `${config.originalHeight * scale}px`;
-  stage.style.transform = `scale(${scale})`;
-}
-
-function escapeHtml(value) {
-  return value.replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[character]));
-}
-
-function slugify(value) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "colaborador";
-}
-
 function getData() {
+  const city = inputs.city.value.trim();
+  const state = inputs.state.value.trim().toUpperCase();
+  const country = inputs.country.value.trim();
+
   return {
     name: inputs.name.value.trim(),
     role: inputs.role.value.trim(),
     phone: inputs.phone.value.trim(),
-    phoneHref: inputs.phone.value.replace(/[^+\d]/g, ""),
     email: inputs.email.value.trim(),
-    location: locationText()
+    city,
+    state,
+    country,
+    location: `${city} – ${state} | ${country}`
   };
 }
 
-function overlayStyle(key, scale) {
-  const field = config.fields[key];
-  const fittedFontSize = Number.parseFloat(getComputedStyle(outputs[key]).fontSize) || field.fontSize;
-  return [
-    "position:absolute",
-    `left:${(field.x * scale).toFixed(2)}px`,
-    `top:${(field.y * scale).toFixed(2)}px`,
-    `max-width:${(field.maxWidth * scale).toFixed(2)}px`,
-    "display:block",
-    "overflow:hidden",
-    "white-space:nowrap",
-    `font-family:${config.fontFamily}`,
-    `font-size:${(fittedFontSize * scale).toFixed(2)}px`,
-    `line-height:${(fittedFontSize * 1.08 * scale).toFixed(2)}px`,
-    `font-weight:${field.fontWeight}`,
-    `color:${config.colors.navy}`,
-    "text-decoration:none"
-  ].join(";");
-}
+/* =========================================================
+   VALIDAÇÃO
+========================================================= */
 
-function generateEmailHtml(imageSource = config.assets.publicGifUrl) {
-  const data = getData();
-  const finalWidth = 815;
-  const scale = finalWidth / config.originalWidth;
-  const finalHeight = Math.round(config.originalHeight * scale);
-  const imageUrl = escapeHtml(imageSource);
-  const html = `<!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8"><title>Assinatura — ${escapeHtml(data.name)}</title></head>
-<body style="margin:0;padding:0;background:#FFFFFF;">
-<!--[if !mso]><!-->
-<div style="position:relative;width:${finalWidth}px;height:${finalHeight}px;overflow:hidden;background:#FFFFFF;">
-  <img src="${imageUrl}" width="${finalWidth}" height="${finalHeight}" alt="FB Global Logistics" style="display:block;width:${finalWidth}px;height:${finalHeight}px;border:0;outline:none;">
-  <span style="${overlayStyle("name", scale)}">${escapeHtml(data.name)}</span>
-  <span style="${overlayStyle("role", scale)}">${escapeHtml(data.role)}</span>
-  <a href="tel:${escapeHtml(data.phoneHref)}" style="${overlayStyle("phone", scale)}">${escapeHtml(data.phone)}</a>
-  <a href="mailto:${escapeHtml(data.email)}" style="${overlayStyle("email", scale)}">${escapeHtml(data.email)}</a>
-  <span style="${overlayStyle("location", scale)}">${escapeHtml(data.location)}</span>
-</div>
-<!--<![endif]-->
-<!--[if mso]>
-<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="815" style="width:815px;border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;color:#003064;">
-  <tr><td><img src="${imageUrl}" width="815" height="272" alt="FB Global Logistics" style="display:block;border:0;"></td></tr>
-  <tr><td style="padding:10px 0 0;font-size:15px;line-height:22px;"><strong>${escapeHtml(data.name)}</strong> · ${escapeHtml(data.role)}<br><a href="tel:${escapeHtml(data.phoneHref)}" style="color:#003064;text-decoration:none;">${escapeHtml(data.phone)}</a> · <a href="mailto:${escapeHtml(data.email)}" style="color:#003064;text-decoration:none;">${escapeHtml(data.email)}</a> · ${escapeHtml(data.location)}</td></tr>
-</table>
-<![endif]-->
-</body></html>`;
-  return html;
+function validateEmail() {
+  const value = inputs.email.value.trim();
+
+  const valid =
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
+  inputs.email.setAttribute(
+    "aria-invalid",
+    valid ? "false" : "true"
+  );
+
+  emailError.textContent =
+    valid || !value ? "" : "Informe um e-mail válido.";
+
+  return valid;
 }
 
 function validateForExport() {
-  const required = [inputs.name, inputs.role, inputs.phone, inputs.email, inputs.city, inputs.state, inputs.country];
-  const complete = required.every((input) => input.value.trim());
+  const required = [
+    inputs.name,
+    inputs.role,
+    inputs.phone,
+    inputs.email,
+    inputs.city,
+    inputs.state,
+    inputs.country
+  ];
+
+  const complete = required.every(
+    (input) => input.value.trim()
+  );
+
   if (!complete) {
-    status.textContent = "Preencha todos os campos antes de gerar a assinatura.";
+    status.textContent =
+      "Preencha todos os campos antes de gerar a assinatura.";
+
     form.reportValidity();
     return false;
   }
+
   if (!validateEmail()) {
-    status.textContent = "Corrija o e-mail antes de gerar a assinatura.";
+    status.textContent =
+      "Corrija o e-mail antes de gerar a assinatura.";
+
     inputs.email.focus();
     return false;
   }
+
   return true;
 }
 
-async function copySignature() {
-  if (!validateForExport()) return;
-  const html = generateEmailHtml();
+/* =========================================================
+   PRÉVIA ATUAL
+========================================================= */
+
+function applyOverlay(element, fieldName) {
+  const field = config.fields[fieldName];
+
+  element.style.left = `${field.x}px`;
+  element.style.top = `${field.y}px`;
+  element.style.maxWidth = `${field.maxWidth}px`;
+  element.style.fontSize = `${field.fontSize}px`;
+  element.style.fontWeight = field.fontWeight;
+}
+
+Object.keys(config.fields).forEach((field) => {
+  if (outputs[field]) {
+    applyOverlay(outputs[field], field);
+  }
+});
+
+function updatePreview() {
   const data = getData();
-  const plain = `${data.name}\n${data.role} | FB Global Logistics\n${data.phone}\n${data.email}\nfbgloballogistics.com\n${data.location}`;
-  try {
-    if (navigator.clipboard && window.ClipboardItem) {
-      await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([plain], { type: "text/plain" }) })]);
-    } else {
-      const holder = document.createElement("div");
-      holder.innerHTML = html;
-      holder.style.position = "fixed";
-      holder.style.left = "-10000px";
-      document.body.appendChild(holder);
-      const range = document.createRange();
-      range.selectNodeContents(holder);
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
-      document.execCommand("copy");
-      selection.removeAllRanges();
-      holder.remove();
+
+  outputs.name.textContent = data.name;
+  outputs.role.textContent = data.role;
+  outputs.phone.textContent = data.phone;
+  outputs.email.textContent = data.email;
+  outputs.location.textContent = data.location;
+
+  if (outputs.phone) {
+    outputs.phone.href =
+      `tel:${data.phone.replace(/[^\d+]/g, "")}`;
+  }
+
+  if (outputs.email) {
+    outputs.email.href = `mailto:${data.email}`;
+  }
+
+  resizePreview();
+}
+
+function resizePreview() {
+  if (!shell || !stage) return;
+
+  const availableWidth = shell.clientWidth;
+
+  if (!availableWidth) return;
+
+  const scale = Math.min(
+    1,
+    availableWidth / config.originalWidth
+  );
+
+  stage.style.transform = `scale(${scale})`;
+
+  shell.style.height =
+    `${Math.ceil(config.originalHeight * scale)}px`;
+}
+
+/* =========================================================
+   CANVAS / TEXTO
+========================================================= */
+
+function createCanvas(width, height) {
+  const canvas = document.createElement("canvas");
+
+  canvas.width = width;
+  canvas.height = height;
+
+  return canvas;
+}
+
+function getFontString(field) {
+  return `${field.fontWeight} ${field.fontSize}px Montserrat, Arial, Helvetica, sans-serif`;
+}
+
+function fitText(ctx, text, field) {
+  let size = field.fontSize;
+
+  const minimum =
+    field.minFontSize || Math.max(12, field.fontSize * 0.7);
+
+  while (size > minimum) {
+    ctx.font =
+      `${field.fontWeight} ${size}px Montserrat, Arial, Helvetica, sans-serif`;
+
+    if (ctx.measureText(text).width <= field.maxWidth) {
+      break;
     }
-    status.textContent = "Assinatura copiada. Cole no editor de assinaturas do seu e-mail.";
-  } catch {
-    status.textContent = "O navegador bloqueou a cópia. Use Baixar HTML ou abra o gerador por HTTPS.";
+
+    size -= 1;
   }
+
+  return size;
 }
 
-let embeddedGifPromise;
+function drawField(ctx, text, fieldName) {
+  const field = config.fields[fieldName];
 
-function arrayBufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = "";
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
+  if (!field || !text) return;
+
+  const fontSize = fitText(ctx, text, field);
+
+  ctx.save();
+
+  ctx.font =
+    `${field.fontWeight} ${fontSize}px Montserrat, Arial, Helvetica, sans-serif`;
+
+  ctx.fillStyle =
+    config.colors?.navy || "#003064";
+
+  ctx.textBaseline = "top";
+
+  /*
+    Ajuste fino:
+    As coordenadas do config foram criadas para o overlay HTML.
+    Mantemos os mesmos pontos para que o GIF final corresponda
+    à prévia atual.
+  */
+
+  ctx.fillText(
+    text,
+    field.x,
+    field.y,
+    field.maxWidth
+  );
+
+  ctx.restore();
 }
 
-function getEmbeddedGifDataUrl() {
-  if (!embeddedGifPromise) {
-    embeddedGifPromise = fetch(config.assets.previewGifUrl)
-      .then((response) => {
-        if (!response.ok) throw new Error(`Não foi possível carregar o GIF (${response.status}).`);
-        return response.arrayBuffer();
-      })
-      .then((buffer) => `data:image/gif;base64,${arrayBufferToBase64(buffer)}`)
-      .catch((error) => {
-        embeddedGifPromise = undefined;
-        throw error;
-      });
-  }
-  return embeddedGifPromise;
+function drawEmployeeData(ctx, data) {
+  drawField(ctx, data.name, "name");
+  drawField(ctx, data.role, "role");
+  drawField(ctx, data.phone, "phone");
+  drawField(ctx, data.email, "email");
+  drawField(ctx, data.location, "location");
 }
 
-async function downloadSignature() {
-  if (!validateForExport()) return;
-  status.textContent = "Preparando o HTML completo com o GIF animado…";
+/* =========================================================
+   CARREGAR FONTE
+========================================================= */
+
+async function ensureFonts() {
   try {
-    const embeddedGif = await getEmbeddedGifDataUrl();
-    const html = generateEmailHtml(embeddedGif);
-    const filename = `assinatura-${slugify(inputs.name.value)}.html`;
-    const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    status.textContent = `Arquivo ${filename} gerado com o GIF incorporado.`;
-  } catch {
-    status.textContent = "Não foi possível incorporar o GIF. Recarregue a página e tente novamente.";
+    if (document.fonts?.load) {
+      await Promise.all([
+        document.fonts.load("700 40px Montserrat"),
+        document.fonts.load("400 28px Montserrat"),
+        document.fonts.load("500 23px Montserrat"),
+        document.fonts.load("500 22px Montserrat")
+      ]);
+
+      await document.fonts.ready;
+    }
+  } catch (error) {
+    console.warn(
+      "Montserrat não pôde ser confirmada. Usando fallback.",
+      error
+    );
   }
 }
 
-Object.values(inputs).forEach((input) => input.addEventListener("input", updatePreview));
-document.querySelector("#copy-button").addEventListener("click", copySignature);
-document.querySelector("#download-button").addEventListener("click", downloadSignature);
-document.querySelector("#reset-button").addEventListener("click", setDefaults);
+/* =========================================================
+   SLUG
+========================================================= */
 
-new ResizeObserver(scalePreview).observe(shell);
-window.addEventListener("load", scalePreview);
+function slugify(value) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/* =========================================================
+   COMPOSIÇÃO DOS FRAMES
+========================================================= */
+
+function drawPatchOnCanvas(
+  targetCtx,
+  patch,
+  dims
+) {
+  const patchCanvas = createCanvas(
+    dims.width,
+    dims.height
+  );
+
+  const patchCtx =
+    patchCanvas.getContext("2d");
+
+  const imageData =
+    patchCtx.createImageData(
+      dims.width,
+      dims.height
+    );
+
+  imageData.data.set(patch);
+
+  patchCtx.putImageData(
+    imageData,
+    0,
+    0
+  );
+
+  targetCtx.drawImage(
+    patchCanvas,
+    dims.left,
+    dims.top
+  );
+}
+
+/* =========================================================
+   GERAR GIF
+========================================================= */
+
+async function generatePersonalizedGif() {
+  if (!validateForExport()) return;
+
+  const data = getData();
+
+  generateButton.disabled = true;
+  downloadButton.disabled = true;
+
+  status.textContent =
+    "Gerando assinatura animada...";
+
+  try {
+    await ensureFonts();
+
+    /*
+      Carregamos diretamente o BASE local.
+      Isso evita depender do Outlook ou de HTML para a composição.
+    */
+
+    const response =
+      await fetch(
+        config.assets.previewGifUrl,
+        { cache: "no-store" }
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        `Não foi possível carregar o GIF base (${response.status}).`
+      );
+    }
+
+    const buffer =
+      await response.arrayBuffer();
+
+    const parsed =
+      parseGIF(buffer);
+
+    const frames =
+      decompressFrames(parsed, true);
+
+    if (!frames.length) {
+      throw new Error(
+        "Nenhum frame foi encontrado no GIF base."
+      );
+    }
+
+    const width =
+      config.originalWidth;
+
+    const height =
+      config.originalHeight;
+
+    /*
+      Canvas que mantém o estado acumulado da animação.
+    */
+
+    const animationCanvas =
+      createCanvas(width, height);
+
+    const animationCtx =
+      animationCanvas.getContext("2d", {
+        willReadFrequently: true
+      });
+
+    /*
+      Canvas usado para produzir cada frame final.
+    */
+
+    const outputCanvas =
+      createCanvas(width, height);
+
+    const outputCtx =
+      outputCanvas.getContext("2d", {
+        willReadFrequently: true
+      });
+
+    const encoder =
+      GIFEncoder();
+
+    let previousFrame = null;
+    let restoreImageData = null;
+
+    /*
+      Processamos cada frame individualmente.
+    */
+
+    for (
+      let index = 0;
+      index < frames.length;
+      index += 1
+    ) {
+      const frame =
+        frames[index];
+
+      status.textContent =
+        `Gerando assinatura animada... ${index + 1}/${frames.length}`;
+
+      /*
+        Disposal do frame anterior.
+      */
+
+      if (previousFrame) {
+        const previousDisposal =
+          previousFrame.disposalType;
+
+        if (previousDisposal === 2) {
+          animationCtx.clearRect(
+            previousFrame.dims.left,
+            previousFrame.dims.top,
+            previousFrame.dims.width,
+            previousFrame.dims.height
+          );
+        }
+
+        if (
+          previousDisposal === 3 &&
+          restoreImageData
+        ) {
+          animationCtx.putImageData(
+            restoreImageData,
+            0,
+            0
+          );
+
+          restoreImageData = null;
+        }
+      }
+
+      /*
+        Disposal 3:
+        precisamos salvar o estado ANTES de desenhar
+        o frame atual.
+      */
+
+      if (frame.disposalType === 3) {
+        restoreImageData =
+          animationCtx.getImageData(
+            0,
+            0,
+            width,
+            height
+          );
+      }
+
+      /*
+        Aplica o patch do frame.
+      */
+
+      drawPatchOnCanvas(
+        animationCtx,
+        frame.patch,
+        frame.dims
+      );
+
+      /*
+        Copia a arte animada para o canvas final.
+      */
+
+      outputCtx.clearRect(
+        0,
+        0,
+        width,
+        height
+      );
+
+      outputCtx.drawImage(
+        animationCanvas,
+        0,
+        0
+      );
+
+      /*
+        Aqui acontece a mudança fundamental:
+
+        os dados deixam de ser HTML e passam
+        a fazer parte dos pixels do frame.
+      */
+
+      drawEmployeeData(
+        outputCtx,
+        data
+      );
+
+      const rgba =
+        outputCtx.getImageData(
+          0,
+          0,
+          width,
+          height
+        ).data;
+
+      /*
+        GIF trabalha com paleta indexada.
+      */
+
+      const palette =
+        quantize(rgba, 256);
+
+      const indexed =
+        applyPalette(
+          rgba,
+          palette
+        );
+
+      /*
+        gifuct-js fornece o delay em ms.
+        Caso não exista, usamos 100ms.
+      */
+
+      const delay =
+        Number.isFinite(frame.delay) &&
+        frame.delay > 0
+          ? frame.delay
+          : 100;
+
+      encoder.writeFrame(
+        indexed,
+        width,
+        height,
+        {
+          palette,
+          delay,
+          repeat:
+            index === 0 ? 0 : undefined
+        }
+      );
+
+      previousFrame = frame;
+
+      /*
+        Libera o thread da interface periodicamente
+        para a página não parecer travada.
+      */
+
+      if (index % 2 === 0) {
+        await new Promise(
+          (resolve) =>
+            requestAnimationFrame(resolve)
+        );
+      }
+    }
+
+    encoder.finish();
+
+    const bytes =
+      encoder.bytes();
+
+    generatedGifBlob =
+      new Blob(
+        [bytes],
+        { type: "image/gif" }
+      );
+
+    if (generatedGifUrl) {
+      URL.revokeObjectURL(
+        generatedGifUrl
+      );
+    }
+
+    generatedGifUrl =
+      URL.createObjectURL(
+        generatedGifBlob
+      );
+
+    /*
+      Mostra o resultado FINAL no lugar da base.
+      Agora não há overlay sobre essa imagem.
+    */
+
+    baseImage.src =
+      generatedGifUrl;
+
+    Object.values(outputs).forEach(
+      (element) => {
+        element.style.visibility =
+          "hidden";
+      }
+    );
+
+    downloadButton.disabled = false;
+
+    status.textContent =
+      "Assinatura gerada. O GIF final já contém todos os dados. Clique em Baixar GIF.";
+
+  } catch (error) {
+    console.error(error);
+
+    status.textContent =
+      `Erro ao gerar assinatura: ${error.message}`;
+
+    generatedGifBlob = null;
+    downloadButton.disabled = true;
+
+  } finally {
+    generateButton.disabled = false;
+  }
+}
+
+/* =========================================================
+   DOWNLOAD
+========================================================= */
+
+function downloadGeneratedGif() {
+  if (!generatedGifBlob) {
+    status.textContent =
+      "Primeiro clique em Gerar assinatura.";
+    return;
+  }
+
+  const data = getData();
+
+  const filename =
+    `assinatura-${slugify(data.name)}.gif`;
+
+  const url =
+    URL.createObjectURL(
+      generatedGifBlob
+    );
+
+  const link =
+    document.createElement("a");
+
+  link.href = url;
+  link.download = filename;
+
+  document.body.appendChild(link);
+
+  link.click();
+  link.remove();
+
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 1000);
+
+  status.textContent =
+    `GIF baixado: ${filename}`;
+}
+
+/* =========================================================
+   RESTAURAR
+========================================================= */
+
+function resetGenerator() {
+  if (generatedGifUrl) {
+    URL.revokeObjectURL(
+      generatedGifUrl
+    );
+
+    generatedGifUrl = null;
+  }
+
+  generatedGifBlob = null;
+
+  baseImage.src =
+    config.assets.previewGifUrl;
+
+  Object.values(outputs).forEach(
+    (element) => {
+      element.style.visibility =
+        "visible";
+    }
+  );
+
+  downloadButton.disabled = true;
+
+  setDefaults();
+
+  status.textContent =
+    "Dados restaurados.";
+}
+
+/* =========================================================
+   ALTERAÇÃO DOS CAMPOS
+========================================================= */
+
+Object.values(inputs).forEach(
+  (input) => {
+    input.addEventListener(
+      "input",
+      () => {
+        /*
+          Se já existia um GIF gerado e o usuário
+          alterou algum dado, voltamos para a prévia.
+        */
+
+        if (generatedGifBlob) {
+          if (generatedGifUrl) {
+            URL.revokeObjectURL(
+              generatedGifUrl
+            );
+
+            generatedGifUrl = null;
+          }
+
+          generatedGifBlob = null;
+
+          baseImage.src =
+            config.assets.previewGifUrl;
+
+          Object.values(outputs).forEach(
+            (element) => {
+              element.style.visibility =
+                "visible";
+            }
+          );
+
+          downloadButton.disabled = true;
+        }
+
+        if (input === inputs.state) {
+          const cursor =
+            input.selectionStart;
+
+          input.value =
+            input.value.toUpperCase();
+
+          try {
+            input.setSelectionRange(
+              cursor,
+              cursor
+            );
+          } catch {
+            // sem ação
+          }
+        }
+
+        if (input === inputs.email) {
+          validateEmail();
+        }
+
+        updatePreview();
+      }
+    );
+  }
+);
+
+/* =========================================================
+   EVENTOS
+========================================================= */
+
+generateButton.addEventListener(
+  "click",
+  generatePersonalizedGif
+);
+
+downloadButton.addEventListener(
+  "click",
+  downloadGeneratedGif
+);
+
+resetButton.addEventListener(
+  "click",
+  resetGenerator
+);
+
+window.addEventListener(
+  "resize",
+  resizePreview
+);
+
+/* =========================================================
+   INICIALIZAÇÃO
+========================================================= */
+
 setDefaults();
 
-function registerWebMcpTools() {
-  const context = document.modelContext;
-  if (!context?.registerTool) return;
-  const lifecycle = new AbortController();
-
-  Promise.resolve(context.registerTool({
-    name: "configure_signature_fields",
-    title: "Preencher assinatura",
-    description: "Atualiza os campos editáveis da assinatura e a prévia visível.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: { type: "string", minLength: 1, maxLength: 48 },
-        role: { type: "string", minLength: 1, maxLength: 28 },
-        phone: { type: "string", minLength: 6, maxLength: 28 },
-        email: { type: "string", minLength: 5, maxLength: 52 },
-        city: { type: "string", minLength: 1, maxLength: 28 },
-        state: { type: "string", minLength: 2, maxLength: 3 },
-        country: { type: "string", minLength: 1, maxLength: 20 }
-      },
-      required: ["name", "role", "phone", "email", "city", "state", "country"],
-      additionalProperties: false
-    },
-    annotations: { readOnlyHint: false, untrustedContentHint: false },
-    execute(data) {
-      const keys = ["name", "role", "phone", "email", "city", "state", "country"];
-      if (!data || keys.some((key) => typeof data[key] !== "string" || !data[key].trim())) throw new Error("Todos os campos são obrigatórios.");
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())) throw new Error("E-mail inválido.");
-      keys.forEach((key) => { inputs[key].value = data[key].trim(); });
-      updatePreview();
-      return { status: "updated", fields: getData() };
-    }
+baseImage.addEventListener(
+  "load",
+  resizePreview
+);
   }, { signal: lifecycle.signal })).catch(() => {});
 }
 
