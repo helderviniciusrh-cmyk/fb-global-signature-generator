@@ -29,21 +29,20 @@ const OUTPUT_SCALE =
   OUTPUT_WIDTH / config.originalWidth;
 
 /*
- * Mantemos 64 cores para controlar o tamanho do arquivo.
+ * 64 cores mantém boa qualidade visual
+ * com peso adequado para assinatura de e-mail.
  */
 const GIF_COLORS = 64;
 
 /*
- * Aproximadamente 20 FPS.
- * A versão anterior usava 100 ms e ficou travada.
+ * 40 ms = teto aproximado de 25 FPS.
+ *
+ * Diferentemente da versão anterior,
+ * NÃO eliminamos frames pela diferença visual.
+ *
+ * Apenas agrupamos frames extremamente rápidos.
  */
-const MIN_FRAME_DELAY = 50;
-
-/*
- * Sensibilidade para preservar movimentos sutis.
- * Quanto menor, mais frames são mantidos.
- */
-const FRAME_DIFFERENCE_THRESHOLD = 0.35;
+const MIN_FRAME_DELAY = 40;
 
 
 /* =========================================================
@@ -189,20 +188,24 @@ function validateEmail() {
     return false;
   }
 
+
   const valid =
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
       value
     );
+
 
   inputs.email.setAttribute(
     "aria-invalid",
     valid ? "false" : "true"
   );
 
+
   emailError.textContent =
     valid
       ? ""
       : "Informe um e-mail válido.";
+
 
   return valid;
 }
@@ -220,10 +223,12 @@ function validateForExport() {
     inputs.country
   ];
 
+
   const complete =
     required.every(
       input => input.value.trim()
     );
+
 
   if (!complete) {
 
@@ -235,6 +240,7 @@ function validateForExport() {
     return false;
   }
 
+
   if (!validateEmail()) {
 
     status.textContent =
@@ -244,6 +250,7 @@ function validateForExport() {
 
     return false;
   }
+
 
   return true;
 }
@@ -279,9 +286,11 @@ function configureOverlay(
   const field =
     config.fields[fieldName];
 
+
   if (!element || !field) {
     return;
   }
+
 
   element.style.left =
     `${field.x}px`;
@@ -347,8 +356,10 @@ function showOverlays() {
     element => {
 
       if (element) {
+
         element.style.visibility =
           "visible";
+
       }
 
     }
@@ -362,8 +373,10 @@ function hideOverlays() {
     element => {
 
       if (element) {
+
         element.style.visibility =
           "hidden";
+
       }
 
     }
@@ -379,6 +392,7 @@ function updatePreviewText() {
 
   const data =
     getData();
+
 
   outputs.name.textContent =
     data.name;
@@ -403,12 +417,15 @@ function resizePreview() {
     return;
   }
 
+
   const availableWidth =
     shell.clientWidth;
+
 
   if (!availableWidth) {
     return;
   }
+
 
   const scale =
     Math.min(
@@ -416,6 +433,7 @@ function resizePreview() {
       availableWidth /
       config.originalWidth
     );
+
 
   stage.style.width =
     `${config.originalWidth}px`;
@@ -428,6 +446,7 @@ function resizePreview() {
 
   stage.style.transform =
     `scale(${scale})`;
+
 
   shell.style.height =
     `${Math.ceil(
@@ -447,7 +466,9 @@ function showEditablePreview() {
     generatedGifUrl = null;
   }
 
+
   generatedGifBlob = null;
+
 
   baseImage.style.width =
     `${config.originalWidth}px`;
@@ -455,20 +476,27 @@ function showEditablePreview() {
   baseImage.style.height =
     `${config.originalHeight}px`;
 
+
   baseImage.src =
     config.assets.previewGifUrl;
+
 
   showOverlays();
 
   updatePreviewText();
 
-  downloadButton.disabled = true;
+
+  downloadButton.disabled =
+    true;
+
 
   if (previewDescription) {
 
     previewDescription.textContent =
       "O GIF permanece intacto e animado.";
+
   }
+
 
   requestAnimationFrame(
     resizePreview
@@ -488,8 +516,11 @@ function createCanvas(
   const canvas =
     document.createElement("canvas");
 
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width =
+    width;
+
+  canvas.height =
+    height;
 
   return canvas;
 }
@@ -505,9 +536,11 @@ async function ensureFonts() {
     return;
   }
 
+
   try {
 
     await Promise.all([
+
       document.fonts.load(
         "700 40px Montserrat"
       ),
@@ -523,7 +556,9 @@ async function ensureFonts() {
       document.fonts.load(
         "500 22px Montserrat"
       )
+
     ]);
+
 
     await document.fonts.ready;
 
@@ -533,6 +568,7 @@ async function ensureFonts() {
       "Montserrat não pôde ser confirmada.",
       error
     );
+
   }
 }
 
@@ -548,11 +584,14 @@ function getScaledField(
   const original =
     config.fields[fieldName];
 
+
   if (!original) {
     return null;
   }
 
+
   return {
+
     x:
       original.x *
       OUTPUT_SCALE,
@@ -578,6 +617,7 @@ function getScaledField(
 
     fontWeight:
       original.fontWeight
+
   };
 }
 
@@ -591,6 +631,7 @@ function calculateFontSize(
   let size =
     field.fontSize;
 
+
   while (
     size >
     field.minFontSize
@@ -599,15 +640,21 @@ function calculateFontSize(
     ctx.font =
       `${field.fontWeight} ${size}px ${config.fontFamily}`;
 
+
     if (
       ctx.measureText(text).width <=
       field.maxWidth
     ) {
+
       break;
+
     }
 
-    size -= 0.5;
+
+    size -=
+      0.5;
   }
+
 
   return size;
 }
@@ -623,14 +670,17 @@ function drawField(
     return;
   }
 
+
   const field =
     getScaledField(
       fieldName
     );
 
+
   if (!field) {
     return;
   }
+
 
   const size =
     calculateFontSize(
@@ -639,25 +689,32 @@ function drawField(
       field
     );
 
+
   ctx.save();
+
 
   ctx.font =
     `${field.fontWeight} ${size}px ${config.fontFamily}`;
 
+
   ctx.fillStyle =
     config.colors.navy;
+
 
   ctx.textAlign =
     "left";
 
+
   ctx.textBaseline =
     "top";
+
 
   ctx.fillText(
     text,
     field.x,
     field.y
   );
+
 
   ctx.restore();
 }
@@ -674,11 +731,13 @@ function drawEmployeeData(
     "name"
   );
 
+
   drawField(
     ctx,
     data.role,
     "role"
   );
+
 
   drawField(
     ctx,
@@ -686,11 +745,13 @@ function drawEmployeeData(
     "phone"
   );
 
+
   drawField(
     ctx,
     data.email,
     "email"
   );
+
 
   drawField(
     ctx,
@@ -714,8 +775,12 @@ function createPatchCanvas(
       frame.dims.height
     );
 
+
   const ctx =
-    canvas.getContext("2d");
+    canvas.getContext(
+      "2d"
+    );
+
 
   const imageData =
     ctx.createImageData(
@@ -723,9 +788,11 @@ function createPatchCanvas(
       frame.dims.height
     );
 
+
   imageData.data.set(
     frame.patch
   );
+
 
   ctx.putImageData(
     imageData,
@@ -733,67 +800,8 @@ function createPatchCanvas(
     0
   );
 
+
   return canvas;
-}
-
-
-/* =========================================================
-   DIFERENÇA ENTRE FRAMES
-========================================================= */
-
-function calculateFrameDifference(
-  current,
-  previous
-) {
-
-  if (!previous) {
-    return Infinity;
-  }
-
-  const a =
-    current.data;
-
-  const b =
-    previous.data;
-
-  let difference = 0;
-  let samples = 0;
-
-  /*
-   * Amostragem de pixels.
-   * Mantém o processamento leve.
-   */
-  const step =
-    4 * 8;
-
-  for (
-    let i = 0;
-    i < a.length;
-    i += step
-  ) {
-
-    difference +=
-      Math.abs(
-        a[i] - b[i]
-      ) +
-      Math.abs(
-        a[i + 1] - b[i + 1]
-      ) +
-      Math.abs(
-        a[i + 2] - b[i + 2]
-      );
-
-    samples += 3;
-  }
-
-  if (!samples) {
-    return 0;
-  }
-
-  return (
-    difference /
-    samples
-  );
 }
 
 
@@ -807,20 +815,27 @@ async function generateSignature() {
     return;
   }
 
+
   if (!validateForExport()) {
     return;
   }
 
-  generating = true;
+
+  generating =
+    true;
+
 
   generateButton.disabled =
     true;
 
+
   downloadButton.disabled =
     true;
 
+
   status.textContent =
     "Carregando GIF oficial...";
+
 
   try {
 
@@ -828,7 +843,7 @@ async function generateSignature() {
 
 
     /* =====================================================
-       CARREGA GIF
+       CARREGA O GIF ORIGINAL
     ===================================================== */
 
     let response =
@@ -839,6 +854,7 @@ async function generateSignature() {
         }
       );
 
+
     if (!response.ok) {
 
       response =
@@ -848,13 +864,16 @@ async function generateSignature() {
             cache: "no-store"
           }
         );
+
     }
+
 
     if (!response.ok) {
 
       throw new Error(
         "Não foi possível carregar o GIF oficial."
       );
+
     }
 
 
@@ -887,6 +906,7 @@ async function generateSignature() {
       throw new Error(
         "O GIF não contém frames válidos."
       );
+
     }
 
 
@@ -938,6 +958,7 @@ async function generateSignature() {
     outputCtx.imageSmoothingEnabled =
       true;
 
+
     outputCtx.imageSmoothingQuality =
       "high";
 
@@ -957,21 +978,27 @@ async function generateSignature() {
     let previousSourceFrame =
       null;
 
+
     let restoreState =
       null;
 
-    let lastEncodedImage =
-      null;
 
+    /*
+     * Aqui controlamos apenas o tempo.
+     *
+     * Não existe mais análise por
+     * diferença visual.
+     */
     let pendingDelay =
       0;
+
 
     let encodedFrames =
       0;
 
 
     /* =====================================================
-       PROCESSAMENTO
+       PROCESSAMENTO DOS FRAMES
     ===================================================== */
 
     for (
@@ -985,7 +1012,7 @@ async function generateSignature() {
 
 
       status.textContent =
-        `Otimizando: ${index + 1} de ${frames.length} frames...`;
+        `Processando animação: ${index + 1} de ${frames.length} frames...`;
 
 
       /* ===================================================
@@ -1006,6 +1033,7 @@ async function generateSignature() {
             previousSourceFrame.dims.width,
             previousSourceFrame.dims.height
           );
+
         }
 
 
@@ -1020,9 +1048,12 @@ async function generateSignature() {
             0
           );
 
+
           restoreState =
             null;
+
         }
+
       }
 
 
@@ -1037,11 +1068,12 @@ async function generateSignature() {
             config.originalWidth,
             config.originalHeight
           );
+
       }
 
 
       /* ===================================================
-         DESENHA O PATCH
+         MONTA FRAME ORIGINAL
       =================================================== */
 
       const patchCanvas =
@@ -1070,6 +1102,7 @@ async function generateSignature() {
 
 
       outputCtx.drawImage(
+
         sourceCanvas,
 
         0,
@@ -1081,6 +1114,7 @@ async function generateSignature() {
         0,
         OUTPUT_WIDTH,
         OUTPUT_HEIGHT
+
       );
 
 
@@ -1095,17 +1129,8 @@ async function generateSignature() {
 
 
       /* ===================================================
-         CAPTURA FRAME
+         DELAY ORIGINAL
       =================================================== */
-
-      const currentImage =
-        outputCtx.getImageData(
-          0,
-          0,
-          OUTPUT_WIDTH,
-          OUTPUT_HEIGHT
-        );
-
 
       let frameDelay =
         Number(
@@ -1121,7 +1146,8 @@ async function generateSignature() {
       ) {
 
         frameDelay =
-          50;
+          40;
+
       }
 
 
@@ -1129,19 +1155,8 @@ async function generateSignature() {
         frameDelay;
 
 
-      /* ===================================================
-         ANALISA MOVIMENTO
-      =================================================== */
-
-      const difference =
-        calculateFrameDifference(
-          currentImage,
-          lastEncodedImage
-        );
-
-
       const isFirstFrame =
-        lastEncodedImage === null;
+        encodedFrames === 0;
 
 
       const isLastFrame =
@@ -1150,29 +1165,37 @@ async function generateSignature() {
 
 
       /*
-       * Agora preservamos muito mais movimento:
+       * NOVA REGRA:
        *
-       * - intervalo mínimo de 50 ms;
-       * - threshold reduzido para 0.35;
-       * - movimentos sutis passam a ser mantidos.
+       * Não verificamos diferença visual.
+       *
+       * Salvamos o frame sempre que
+       * atingirmos 40 ms acumulados.
+       *
+       * Isso preserva a fluidez.
        */
 
       const shouldEncode =
         isFirstFrame ||
         isLastFrame ||
-        (
-          pendingDelay >=
-            MIN_FRAME_DELAY &&
-          difference >=
-            FRAME_DIFFERENCE_THRESHOLD
-        );
+        pendingDelay >=
+          MIN_FRAME_DELAY;
 
 
       /* ===================================================
-         CODIFICA FRAME
+         CODIFICA
       =================================================== */
 
       if (shouldEncode) {
+
+        const currentImage =
+          outputCtx.getImageData(
+            0,
+            0,
+            OUTPUT_WIDTH,
+            OUTPUT_HEIGHT
+          );
+
 
         const palette =
           quantize(
@@ -1189,10 +1212,15 @@ async function generateSignature() {
 
 
         encoder.writeFrame(
+
           indexedPixels,
+
           OUTPUT_WIDTH,
+
           OUTPUT_HEIGHT,
+
           {
+
             palette,
 
             delay:
@@ -1202,26 +1230,19 @@ async function generateSignature() {
               ),
 
             repeat: 0
+
           }
+
         );
 
 
-        lastEncodedImage =
-          new ImageData(
-            new Uint8ClampedArray(
-              currentImage.data
-            ),
-            OUTPUT_WIDTH,
-            OUTPUT_HEIGHT
-          );
+        encodedFrames +=
+          1;
 
 
         pendingDelay =
           0;
 
-
-        encodedFrames +=
-          1;
       }
 
 
@@ -1230,7 +1251,7 @@ async function generateSignature() {
 
 
       /*
-       * Libera a interface periodicamente.
+       * Mantém a página responsiva.
        */
 
       if (
@@ -1243,7 +1264,9 @@ async function generateSignature() {
               resolve
             )
         );
+
       }
+
     }
 
 
@@ -1274,6 +1297,7 @@ async function generateSignature() {
       URL.revokeObjectURL(
         generatedGifUrl
       );
+
     }
 
 
@@ -1284,18 +1308,15 @@ async function generateSignature() {
 
 
     /* =====================================================
-       MOSTRA GIF GERADO
+       MOSTRA GIF FINAL
     ===================================================== */
 
     hideOverlays();
 
 
-    /*
-     * Mantém o tamanho visual da prévia.
-     */
-
     baseImage.style.width =
       `${config.originalWidth}px`;
+
 
     baseImage.style.height =
       `${config.originalHeight}px`;
@@ -1311,6 +1332,7 @@ async function generateSignature() {
         requestAnimationFrame(
           resizePreview
         );
+
       };
 
 
@@ -1324,6 +1346,7 @@ async function generateSignature() {
 
       previewDescription.textContent =
         `GIF otimizado · ${OUTPUT_WIDTH} × ${OUTPUT_HEIGHT} · ${formatBytes(generatedGifBlob.size)}`;
+
     }
 
 
@@ -1352,6 +1375,7 @@ async function generateSignature() {
 
     generateButton.disabled =
       false;
+
   }
 }
 
@@ -1448,6 +1472,7 @@ function handleInputChange(
 
     input.value =
       input.value.toUpperCase();
+
   }
 
 
@@ -1457,19 +1482,16 @@ function handleInputChange(
   ) {
 
     validateEmail();
+
   }
 
-
-  /*
-   * Se os dados forem alterados depois da geração,
-   * invalida o GIF anterior.
-   */
 
   if (
     generatedGifBlob
   ) {
 
     showEditablePreview();
+
   }
 
 
@@ -1491,8 +1513,10 @@ function resetGenerator() {
       generatedGifUrl
     );
 
+
     generatedGifUrl =
       null;
+
   }
 
 
@@ -1505,6 +1529,7 @@ function resetGenerator() {
 
   baseImage.style.width =
     `${config.originalWidth}px`;
+
 
   baseImage.style.height =
     `${config.originalHeight}px`;
@@ -1530,6 +1555,7 @@ function resetGenerator() {
 
     previewDescription.textContent =
       "O GIF permanece intacto e animado.";
+
   }
 
 
@@ -1592,6 +1618,7 @@ function initialize() {
   stage.style.width =
     `${config.originalWidth}px`;
 
+
   stage.style.height =
     `${config.originalHeight}px`;
 
@@ -1615,6 +1642,7 @@ function initialize() {
   baseImage.style.width =
     `${config.originalWidth}px`;
 
+
   baseImage.style.height =
     `${config.originalHeight}px`;
 
@@ -1625,6 +1653,7 @@ function initialize() {
       requestAnimationFrame(
         resizePreview
       );
+
     };
 
 
@@ -1640,11 +1669,13 @@ function initialize() {
           config.assets.publicGifUrl;
 
         return;
+
       }
 
 
       status.textContent =
         "Não foi possível carregar o GIF oficial.";
+
     };
 
 
@@ -1660,7 +1691,9 @@ function initialize() {
     requestAnimationFrame(
       resizePreview
     );
+
   }
+
 }
 
 
