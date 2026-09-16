@@ -4,7 +4,7 @@ export const signatureConfig = Object.freeze({
 
   assets: {
     previewGifUrl: "./email-signature/fb-global-signature-base.gif",
-    publicGifUrl: "https://fbgloballogistics.com/assets/email/fb-global-signature-base.gif"
+    publicGifUrl: "https://raw.githubusercontent.com/helderviniciusrh-cmyk/fb-global-signature-generator/main/email-signature/fb-global-signature-base.gif"
   },
 
   colors: {
